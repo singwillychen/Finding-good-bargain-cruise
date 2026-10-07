@@ -1,0 +1,262 @@
+# 郵輪特價追蹤系統：邏輯歸納與設計提案（v0.1 草案）
+
+> 狀態：**討論中，尚未開工**。本文件確認後才進入實作。
+
+## 1. 目標
+
+1. 追蹤兩個網站的郵輪價格：
+   - Vacations To Go（VTG）：https://www.vacationstogo.com/
+   - CruiseDirect（CD）：https://www.cruisedirect.com/
+2. 使用者設定「起點（出發港）＋ 終點／目的地（可多選）」等條件，建立**追蹤清單（Watch）**。
+3. 系統定期抓價、存歷史，畫出價格變化。
+4. 自動找出「特別便宜」的航次，附上理由，推薦訂購，並主動通知。
+
+不在範圍內：代訂、付款、帳號自動登入下單。系統只負責「發現＋提醒」，訂購仍在原網站完成。
+
+---
+
+## 2. 邏輯歸納
+
+### 2.1 核心名詞
+
+| 名詞 | 意義 | 例子 |
+|---|---|---|
+| **航次 Sailing** | 一艘船在某一天出發的一趟行程 | Royal Caribbean / Wonder of the Seas / 2026-12-06 / 7 晚 |
+| **行程 Itinerary** | 出發港、停靠港、結束港、晚數 | 邁阿密 → 拿索 → 可可島 → 邁阿密 |
+| **艙等 Cabin** | 統一成 4 類 | 內艙 Interior / 海景 Oceanview / 陽台 Balcony / 套房 Suite |
+| **價格快照 Price Snapshot** | 某時間點、某網站、某艙等的價格 | 2026-10-07 09:00, VTG, Balcony, US$899/人 |
+| **追蹤條件 Watch** | 使用者設定的搜尋條件 | 從邁阿密出發，到加勒比海東部 或 巴哈馬，12 月，5–8 晚，陽台房，≤ US$1,000 |
+| **特價訊號 Deal Signal** | 系統判斷某航次很便宜的理由 | 「比同類航次便宜 32%」、「歷史新低」 |
+
+### 2.2 「起點／終點」怎麼定義
+
+郵輪跟機票不同，大部分是**來回航線**（同港出發同港回），所以「終點」要拆成兩種意義，兩者都支援：
+
+1. **目的地區域（主要用法）**：加勒比海、阿拉斯加、地中海、北歐、日韓、東南亞…
+   → 兩個網站的搜尋都是以「區域」為主要篩選，可直接對應。
+2. **結束港（單程／移位航線 Repositioning）**：例如「巴塞隆納 → 邁阿密」橫渡大西洋。
+   → 移位航線常常是每晚單價最便宜的類型，值得特別支援。
+
+Watch 的條件可以這樣組合：
+
+```
+出發港：   [任一] 或 多選（Miami, Fort Lauderdale, Port Canaveral…）
+目的地：   多選區域（Caribbean-East, Bahamas…） 和/或 多選結束港
+出發日期： 區間（2026-12-01 ~ 2027-02-28）
+晚數：     區間（5 ~ 8）
+郵輪公司： [任一] 或 多選
+艙等：     多選（預設看 Interior + Balcony）
+價格上限： 每人 US$ 或 每人每晚 US$（選填）
+```
+
+一個 Watch 選多個目的地 = 系統分別搜尋後**合併、去重**再比較。
+
+### 2.3 同一航次跨網站比對
+
+同一個航次在兩個網站都會出現，要能對起來才能比價：
+
+```
+配對鍵 = 郵輪公司 + 船名（正規化） + 出發日期 + 晚數
+```
+
+- 船名正規化：去掉 "MSC "、"the"、大小寫、符號等（建一張別名對照表）。
+- 若配對鍵相同但出發港不同 → 標記為「需人工確認」，不自動合併。
+
+### 2.4 價格正規化（比價前一定要做）
+
+兩站的顯示方式可能不同，統一換算成：
+
+- **每人價格（雙人一室）**，美元
+- **每人每晚價格** = 每人價格 ÷ 晚數（跨長度比較的關鍵指標）
+- 是否含稅費／港務費：分開存 `fare` 和 `taxes_fees`；不明確時標記 `taxes_included = unknown`，比較時只用同口徑。
+- 可選：顯示台幣換算（每天抓一次匯率）。
+
+### 2.5 「特別便宜」的判斷邏輯（核心）
+
+不只看「價格低於 X」，而是用多個訊號加權評分，每個推薦都要說得出理由：
+
+| # | 訊號 | 算法 | 意義 |
+|---|---|---|---|
+| A | **同類比較** | 同區域、同艙等、同晚數級距、同月份的航次群組中，此航次每晚價格的百分位數 | 「比 85% 的同類航次便宜」 |
+| B | **自身歷史跌價** | 現價 vs 過去 30 天最高價／中位數 | 「7 天內降了 22%」 |
+| C | **歷史新低** | 現價 ≤ 自追蹤以來最低價 | 「追蹤以來最低」 |
+| D | **跨站價差** | 兩站同航次價差 | 「CD 比 VTG 便宜 $120」 |
+| E | **網站自標折扣** | VTG 會顯示相對原價（brochure）折扣% | 輔助參考，權重低（原價常灌水） |
+| F | **臨近出發** | 距出發 ≤ 90 天且仍在降價 | 尾艙出清（VTG 的 90-Day Ticker 概念） |
+
+**Bargain Score（0–100）** 初版建議：
+
+```
+score = 40·A + 25·B + 15·C + 10·D + 5·E + 5·F   （各項先標準化成 0–1）
+```
+
+- score ≥ 80 → 🔥 強力推薦，立即通知
+- 60–79 → 👍 值得關注，放每日摘要
+- 另外**硬性規則**（使用者設定）：低於目標價、跌幅 ≥ X%、出現新低 → 一律通知
+
+權重先用經驗值，累積 1–2 個月資料後再依實際觀察調整。
+
+### 2.6 推薦輸出長什麼樣子
+
+```
+🔥 92 分｜Royal Caribbean · Utopia of the Seas
+   2026-12-11 出發｜4 晚｜Port Canaveral → 巴哈馬 → Port Canaveral
+   陽台房 US$489/人（US$122/晚）  ← CruiseDirect 最便宜
+   理由：比同類 4 晚巴哈馬陽台房便宜 88%｜7 天內降 $160｜追蹤以來新低
+   [前往 CruiseDirect 訂購] [前往 VTG] [價格走勢圖]
+```
+
+（選配）用 Claude API 把每日推薦整理成一段白話摘要，例如「本週最划算的是…，建議在…前下訂」。
+
+---
+
+## 3. 資料抓取策略
+
+### 3.1 兩個網站的特性（需於 Phase 0 實測確認）
+
+| | Vacations To Go | CruiseDirect |
+|---|---|---|
+| 頁面型態 | 傳統伺服器端渲染 HTML，表格式結果 | 現代前端，資料很可能由背後 JSON API 載入 |
+| 抓法 | HTTP 請求 + HTML 解析 | 無頭瀏覽器（Playwright）攔截 JSON 回應，或直接呼叫該 API |
+| 特殊頁面 | 90-Day Ticker（**需註冊登入**）、移位航線清單 | 特價頁、促銷頁 |
+| 難度 | 低～中 | 中～高（可能有反爬蟲機制） |
+
+### 3.2 設計原則
+
+- **Adapter 模式**：每個網站一個 adapter，統一輸出格式，日後要加第三個網站（例如郵輪公司官網）只要多寫一個 adapter。
+  ```
+  class SourceAdapter:
+      def search(watch_query) -> list[RawSailing]
+      def normalize(raw) -> Sailing + list[PriceSnapshot]
+  ```
+- **禮貌抓取**：每日 1–2 次、請求間隔 3–10 秒隨機、同時只開 1 個連線、遵守 robots.txt；僅供個人使用。
+- **保存原始頁面**：每次抓取存原始 HTML/JSON（壓縮），網站改版時可重新解析，不會丟資料。
+- **健康檢查**：某 adapter 回傳 0 筆或解析欄位大量缺漏 → 發警告「網站可能改版」，而不是默默存錯資料。
+
+### 3.3 風險（請先知悉）
+
+1. **使用條款**：兩站都沒有公開 API，網站條款可能限制自動化存取。建議定位為**個人、低頻、非商業**使用，不轉售、不公開資料。
+2. **反爬蟲／IP 封鎖**：雲端機房 IP 較容易被擋，家用網路或小型 VPS 較穩。
+3. **網站改版**：解析器一定會壞，屬於常態維護成本（已用 3.2 的健康檢查降低影響）。
+4. **價格口徑差異**：含不含稅、促銷是否限會員／特定國籍居民（例如美國居民限定價），需標示。
+
+---
+
+## 4. 系統架構
+
+```
+┌────────────┐   每日排程   ┌──────────────┐
+│ Scheduler  │────────────▶│ Scraper      │──▶ VTG adapter ─┐
+│ (APScheduler│             │ (Playwright/ │──▶ CD  adapter ─┤
+│  / cron)   │             │  httpx)      │                 │
+└────────────┘             └──────┬───────┘                 │
+                                  ▼                         │
+                         ┌──────────────────┐  原始檔備份   │
+                         │ Normalizer &     │◀──────────────┘
+                         │ Matcher（跨站配對）│
+                         └──────┬───────────┘
+                                ▼
+                         ┌──────────────────┐
+                         │ Database         │  SQLite（MVP）→ Postgres/Supabase
+                         └──────┬───────────┘
+                                ▼
+                 ┌──────────────┴──────────────┐
+                 ▼                             ▼
+        ┌──────────────────┐          ┌──────────────────┐
+        │ Deal Engine      │─────────▶│ Notifier         │ Email / Telegram / LINE
+        │ （評分＋規則）     │          └──────────────────┘
+        └──────┬───────────┘
+               ▼
+        ┌──────────────────┐
+        │ Web UI (FastAPI) │  儀表板、追蹤設定、走勢圖
+        └──────────────────┘
+```
+
+### 4.1 技術選型建議
+
+| 層 | 建議 | 理由 |
+|---|---|---|
+| 語言 | Python 3.12 | 爬蟲生態最完整，一個語言搞定全部 |
+| 抓取 | Playwright + httpx + selectolax | 兼顧靜態與 JS 渲染頁面 |
+| 後端／網站 | FastAPI + Jinja2 + HTMX | 不必另外維護前端專案，開發快 |
+| 圖表 | Chart.js | 價格走勢圖 |
+| 資料庫 | SQLite → 之後可換 Supabase(Postgres) | MVP 零維運；要多人／雲端時再升級 |
+| 排程 | APScheduler（內建於服務） | 一個 container 搞定 |
+| 通知 | Email（Gmail SMTP）＋ Telegram Bot；LINE 用 Messaging API | 註：LINE Notify 已於 2025/3 停止服務 |
+| 部署 | Docker Compose；跑在家用電腦／NAS／小 VPS | 家用 IP 較不易被封 |
+
+### 4.2 資料表設計
+
+```sql
+cruise_line   (id, name, aliases)
+ship          (id, cruise_line_id, name, aliases)
+port          (id, name, country, region, aliases)
+region        (id, name, parent_id)                -- 加勒比海 > 東加勒比海
+
+sailing       (id, ship_id, depart_date, nights,
+               embark_port_id, disembark_port_id,
+               region_id, itinerary_ports_json,
+               match_key UNIQUE)                    -- 跨站配對鍵
+
+source_listing(id, sailing_id, source,              -- 'VTG' | 'CD'
+               source_sailing_id, url,
+               first_seen_at, last_seen_at, is_active)
+
+price_snapshot(id, source_listing_id, captured_at,
+               cabin_type, price_pp, taxes_fees_pp,
+               taxes_included, brochure_price_pp,
+               currency, raw_ref)                   -- 指向原始檔
+
+watch         (id, name, embark_port_ids, region_ids, disembark_port_ids,
+               date_from, date_to, nights_min, nights_max,
+               cruise_line_ids, cabin_types,
+               max_price_pp, max_price_per_night,
+               min_drop_pct, notify_channels, is_active)
+
+deal          (id, sailing_id, cabin_type, computed_at,
+               score, best_source, best_price_pp,
+               reasons_json)                        -- 推薦理由
+
+alert         (id, watch_id, deal_id, sent_at, channel, status)
+scrape_run    (id, source, started_at, finished_at,
+               items_found, errors, status)         -- 健康監控
+```
+
+---
+
+## 5. 網站畫面
+
+1. **今日推薦（首頁）**：依分數排序的特價卡片（如 2.6 範例），可篩艙等、區域。
+2. **我的追蹤**：新增／編輯 Watch；多選出發港、目的地（區域＋結束港）、日期、晚數、艙等、目標價。
+3. **航次詳情**：兩站 × 4 艙等的價格走勢圖、同類航次價格分布（看出它便宜在哪）、前往訂購連結。
+4. **探索**：直接查目前資料庫所有航次，依「每晚單價」排序。
+5. **通知紀錄**：發過哪些提醒。
+6. **系統狀態**：每個網站最近抓取時間、筆數、錯誤（網站改版警示）。
+
+---
+
+## 6. 開發階段
+
+| 階段 | 內容 | 產出 | 預估 |
+|---|---|---|---|
+| **Phase 0 偵察** | 實際分析兩站搜尋流程、URL 參數、背後 API、robots.txt、條款；各手動抓 1 份樣本 | 可行性報告 + 樣本資料 | 0.5–1 天 |
+| **Phase 1 MVP** | VTG adapter、資料庫、排程、CLI 列出最便宜航次 | 每天自動存價 | 2–3 天 |
+| **Phase 2** | CD adapter、跨站配對、價格正規化 | 兩站比價 | 2–3 天 |
+| **Phase 3** | Deal Engine 評分 + Web UI（推薦、追蹤設定、走勢圖） | 可用的網站 | 3–4 天 |
+| **Phase 4** | 通知（Email/Telegram/LINE）、每日摘要、（選配）AI 推薦文字 | 自動提醒 | 1–2 天 |
+| **Phase 5** | 部署、監控、權重調校 | 穩定運作 | 持續 |
+
+建議**先做 Phase 0**：兩個網站的實際結構決定了抓取難度，這一步結果出來後再確認後續是否照此計畫進行。
+
+---
+
+## 7. 待確認事項
+
+1. **出發地偏好**：主要看哪些出發港／區域？（美國、歐洲、還是亞洲如基隆、日本、新加坡？）這兩站以美國市場為主。
+2. **人數與艙等**：雙人一室為主？最在意哪種艙等？
+3. **幣別**：顯示美元即可，還是要加台幣換算？
+4. **通知管道**：Email、Telegram、LINE 哪一個？
+5. **執行環境**：放在自己電腦／NAS、還是租 VPS（約 US$5/月）？
+6. **VTG 帳號**：90-Day Ticker 需要登入，是否願意提供一個註冊帳號給系統使用？
+7. **抓取頻率**：每日 1 次是否足夠？（臨近出發的航次可提高到每日 2–3 次）
+8. **使用條款風險**：是否接受「個人低頻使用」的定位？
