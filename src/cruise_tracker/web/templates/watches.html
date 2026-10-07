@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}我的追蹤｜郵輪特價追蹤{% endblock %}
+{% macro names(ids, table, attr='name') -%}
+{% if ids %}{% for i in ids if i in table %}{{ table[i][attr] }}{% if not loop.last %}、{% endif %}{% endfor %}{% else %}不限{% endif %}
+{%- endmacro %}
+{% block content %}
+<h1>我的追蹤</h1>
+{% for w in watches %}
+<section class="watch {{ '' if w.is_active else 'off' }}">
+  <h3>{{ w.name }} {% if not w.is_active %}<span class="muted">（已暫停）</span>{% endif %}</h3>
+  <dl>
+    <dt>出發港</dt><dd>{{ names(w.embark_port_ids, ports, 'label') }}</dd>
+    <dt>目的地</dt><dd>{{ names(w.region_ids, regions) }}</dd>
+    <dt>結束港</dt><dd>{{ names(w.disembark_port_ids, ports, 'label') }}</dd>
+    <dt>郵輪公司</dt><dd>{{ names(w.cruise_line_ids, lines) }}</dd>
+    <dt>艙等</dt><dd>{% if w.cabin_types %}{% for c in w.cabin_types %}{{ cabin_labels[c] }} {% endfor %}{% else %}最低可訂價{% endif %}</dd>
+    <dt>日期</dt><dd>{{ w.date_from or '不限' }} ~ {{ w.date_to or '不限' }}</dd>
+    <dt>晚數</dt><dd>{{ w.nights_min or '—' }} ~ {{ w.nights_max or '—' }}</dd>
+    <dt>價格上限</dt><dd>{% if w.max_price_pp %}{{ usd(w.max_price_pp) }}/人{% endif %} {% if w.max_price_per_night %}{{ usd(w.max_price_per_night) }}/晚{% endif %}{% if not w.max_price_pp and not w.max_price_per_night %}不限{% endif %}</dd>
+  </dl>
+  <form method="post" action="/watches/{{ w.id }}/toggle" class="inline"><button>{{ '暫停' if w.is_active else '啟用' }}</button></form>
+  <form method="post" action="/watches/{{ w.id }}/delete" class="inline" onsubmit="return confirm('刪除這組追蹤？')"><button class="danger">刪除</button></form>
+  <a href="/?watch={{ w.id }}">看符合的特價 →</a>
+</section>
+{% endfor %}
+
+<h2>新增追蹤</h2>
+<form method="post" action="/watches" class="watch-form">
+  <label>名稱 <input name="name" required placeholder="例：寒假 基隆出發 5 晚內"></label>
+  <fieldset><legend>出發港（不選＝不限）</legend>
+    {% for p in ports.values() %}<label class="chip"><input type="checkbox" name="embark_port_ids" value="{{ p.id }}" {{ 'checked' if p.is_default_asia }}> {{ p.label }}</label>{% endfor %}
+  </fieldset>
+  <fieldset><legend>目的地區域（可多選）</legend>
+    {% for r in regions.values() %}<label class="chip"><input type="checkbox" name="region_ids" value="{{ r.id }}"> {{ r.name }}</label>{% endfor %}
+  </fieldset>
+  <fieldset><legend>結束港（單程／移位航線用，可多選）</legend>
+    {% for p in ports.values() %}<label class="chip"><input type="checkbox" name="disembark_port_ids" value="{{ p.id }}"> {{ p.label }}</label>{% endfor %}
+  </fieldset>
+  <fieldset><legend>郵輪公司（不選＝不限）</legend>
+    {% for c in lines.values() %}<label class="chip"><input type="checkbox" name="cruise_line_ids" value="{{ c.id }}"> {% if c.priority %}⭐{% endif %}{{ c.name }}</label>{% endfor %}
+  </fieldset>
+  <fieldset><legend>艙等（不選＝最低可訂價）</legend>
+    {% for c in cabins %}<label class="chip"><input type="checkbox" name="cabin_types" value="{{ c }}"> {{ cabin_labels[c] }}</label>{% endfor %}
+  </fieldset>
+  <div class="row">
+    <label>出發日 從 <input type="date" name="date_from" value="{{ today }}"></label>
+    <label>到 <input type="date" name="date_to"></label>
+    <label>晚數 <input type="number" name="nights_min" min="1" placeholder="最少"></label>
+    <label>~ <input type="number" name="nights_max" min="1" placeholder="最多"></label>
+  </div>
+  <div class="row">
+    <label>每人上限 US$ <input type="number" name="max_price_pp" min="0"></label>
+    <label>每人每晚上限 US$ <input type="number" name="max_price_per_night" min="0"></label>
+  </div>
+  <button type="submit">新增</button>
+</form>
+{% endblock %}

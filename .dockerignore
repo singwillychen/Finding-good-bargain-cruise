@@ -1,0 +1,7 @@
+.venv
+data
+recon_output
+.git
+tests
+**/__pycache__
+.env

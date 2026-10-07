@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>今日推薦</h1>
+<form class="filters" method="get">
+  <label>追蹤條件
+    <select name="watch" onchange="this.form.submit()">
+      <option value="">全部航次</option>
+      {% for w in watches %}<option value="{{ w.id }}" {{ 'selected' if w.id == watch_id }}>{{ w.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label><input type="checkbox" name="priority" value="true" {{ 'checked' if priority }} onchange="this.form.submit()"> 只看⭐關注品牌</label>
+</form>
+{% if not deals %}
+<p class="empty">還沒有資料。先執行 <code>cruise scrape</code>（或 <code>cruise scrape --source demo</code> 看示範資料）。</p>
+{% endif %}
+<div class="cards">
+{% for d in deals %}{% include "_deal_card.html" %}{% endfor %}
+</div>
+{% endblock %}

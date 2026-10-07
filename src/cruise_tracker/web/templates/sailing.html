@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ sailing.ship.name }} {{ sailing.depart_date }}｜郵輪特價追蹤{% endblock %}
+{% block content %}
+{% set s = sailing %}
+<h1>{% if s.ship.cruise_line.priority %}⭐{% endif %}{{ s.ship.cruise_line.name }} · {{ s.ship.name }}</h1>
+<p class="meta">{{ s.depart_date }}｜{{ s.nights }} 晚｜{{ s.region.name if s.region else '' }}{% if s.needs_review %}｜<span class="warn">兩站出發港不一致，需人工確認</span>{% endif %}</p>
+<p class="route">{{ route(s) }}</p>
+{% if deal %}
+<p><strong>分數 {{ '%.0f'|format(deal.score) }}</strong>：{{ deal.reasons|join('｜') or '目前沒有明顯特價訊號' }}</p>
+{% endif %}
+
+<h2>目前價格（每人，雙人一室）</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>來源</th>{% for c in cabins %}<th>{{ cabin_labels[c] }}</th>{% endfor %}<th></th></tr></thead>
+  <tbody>
+  {% for src in sources %}
+    <tr><td>{{ source_label(src) }}</td>
+    {% for c in cabins %}<td>{% if (src, c) in latest %}{{ usd(latest[(src, c)]) }}{% else %}—{% endif %}</td>{% endfor %}
+    <td>{% for l in s.listings if l.source == src %}<a href="{{ l.url }}" target="_blank" rel="noopener">訂購 ↗</a>{% endfor %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2>價格走勢</h2>
+<div class="chart"><canvas id="chart"></canvas></div>
+<script src="/static/chart.umd.js"></script>
+<script>
+const data = {{ chart|tojson }};
+const rate = {{ rate }};
+const fmt = v => 'US$' + Math.round(v).toLocaleString();
+new Chart(document.getElementById('chart'), {
+  type: 'line',
+  data: {labels: data.labels, datasets: data.datasets.map(d => ({...d, spanGaps: true, tension: 0.2, pointRadius: 3}))},
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    interaction: {mode: 'index', intersect: false},
+    scales: {y: {ticks: {callback: fmt}}},
+    plugins: {tooltip: {callbacks: {label: c => `${c.dataset.label}: ${fmt(c.parsed.y)}（≈ NT$${Math.round(c.parsed.y * rate).toLocaleString()}）`}}}
+  }
+});
+</script>
+{% endblock %}

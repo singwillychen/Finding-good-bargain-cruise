@@ -1,0 +1,30 @@
+{% macro usd(amount, per_night=False) -%}
+<span class="usd" data-twd="≈ NT${{ '{:,.0f}'.format(amount * rate) }}" tabindex="0">US${{ '{:,.0f}'.format(amount) }}</span>
+{%- endmacro %}
+{% macro route(s) -%}
+{{ s.embark_label }}{% for p in s.itinerary_labels[:5] %} → {{ p }}{% endfor %} → {{ s.disembark_label }}
+{%- endmacro %}
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}郵輪特價追蹤{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">🚢 郵輪特價追蹤</a>
+  <nav>
+    <a href="/">今日推薦</a>
+    <a href="/explore">探索</a>
+    <a href="/watches">我的追蹤</a>
+    <a href="/status">系統狀態</a>
+  </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+<footer>匯率 1 USD ≈ {{ '%.2f'|format(rate) }} TWD（台灣銀行即期中價）｜滑鼠移到美金價格上可看台幣</footer>
+</body>
+</html>

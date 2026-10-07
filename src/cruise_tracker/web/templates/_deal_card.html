@@ -1,0 +1,12 @@
+{% set s = d.sailing %}{% set line = s.ship.cruise_line %}
+<article class="card">
+  <div class="score {{ 'hot' if d.score >= 80 else ('good' if d.score >= 60 else '') }}">{{ '%.0f'|format(d.score) }}<small>分</small></div>
+  <div class="body">
+    <h3>{% if line.priority %}<span class="star" title="關注品牌">⭐</span>{% endif %}{{ line.name }} · {{ s.ship.name }}</h3>
+    <p class="meta">{{ s.depart_date }}｜{{ s.nights }} 晚｜{{ s.region.name if s.region else '' }}</p>
+    <p class="route">{{ route(s) }}</p>
+    <p class="price">最低價 {{ usd(d.best_price_pp) }}/人 <span class="muted">（{{ usd(d.price_per_night) }}/晚）</span> · {{ source_label(d.best_source) }}</p>
+    {% if d.reasons %}<ul class="reasons">{% for r in d.reasons %}<li>{{ r }}</li>{% endfor %}</ul>{% endif %}
+    <p class="links"><a href="{{ d.best_url }}" target="_blank" rel="noopener">前往訂購 ↗</a> <a href="/sailing/{{ s.id }}">價格走勢</a></p>
+  </div>
+</article>

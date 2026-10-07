@@ -1,0 +1,17 @@
+services:
+  cruise-tracker:
+    build: .
+    image: cruise-tracker:latest
+    container_name: cruise-tracker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      TZ: Asia/Taipei
+    volumes:
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    # headless Chromium needs some shared memory; keep the whole thing modest for a 2-8 GB NAS
+    shm_size: "512mb"
+    mem_limit: 1500m

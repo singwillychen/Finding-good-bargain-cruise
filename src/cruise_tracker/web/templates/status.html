@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}系統狀態｜郵輪特價追蹤{% endblock %}
+{% block content %}
+<h1>系統狀態</h1>
+<h2>最近抓取</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>來源</th><th>開始</th><th>結束</th><th>航次數</th><th>狀態</th><th>訊息</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr class="{{ r.status }}"><td>{{ source_label(r.source) }}</td><td>{{ r.started_at.strftime('%m-%d %H:%M') }}</td>
+    <td>{{ r.finished_at.strftime('%H:%M') if r.finished_at else '' }}</td><td>{{ r.items_found }}</td>
+    <td>{{ {'ok':'✅ 正常','warning':'⚠️ 警告','failed':'❌ 失敗','running':'⏳ 執行中'}[r.status] }}</td>
+    <td><pre>{{ r.errors[-400:] }}</pre></td></tr>
+  {% else %}<tr><td colspan="6">尚未抓取</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+<h2>通知紀錄</h2>
+{% for a in alerts %}
+<details><summary>{{ a.sent_at.strftime('%Y-%m-%d %H:%M') }} · {{ a.kind }} · {{ a.status }}</summary><pre>{{ a.body }}</pre></details>
+{% else %}<p class="muted">尚未發送</p>{% endfor %}
+{% endblock %}

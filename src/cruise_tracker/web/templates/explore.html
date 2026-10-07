@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}探索｜郵輪特價追蹤{% endblock %}
+{% block content %}
+<h1>探索所有航次</h1>
+<p class="filters">排序：
+  {% for k, label in [('per_night','每晚單價'),('price','總價'),('date','出發日'),('score','分數')] %}
+  <a href="?sort={{ k }}" class="{{ 'active' if sort == k }}">{{ label }}</a>
+  {% endfor %}
+</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>出發日</th><th>郵輪</th><th>航線</th><th>晚</th><th>最低價/人</th><th>每晚</th><th>分數</th><th>來源</th></tr></thead>
+  <tbody>
+  {% for d in deals %}{% set s = d.sailing %}
+    <tr>
+      <td>{{ s.depart_date }}</td>
+      <td>{% if s.ship.cruise_line.priority %}⭐{% endif %}<a href="/sailing/{{ s.id }}">{{ s.ship.cruise_line.name }} · {{ s.ship.name }}</a></td>
+      <td class="route">{{ route(s) }}</td>
+      <td>{{ s.nights }}</td>
+      <td>{{ usd(d.best_price_pp) }}</td>
+      <td>{{ usd(d.price_per_night) }}</td>
+      <td>{{ '%.0f'|format(d.score) }}</td>
+      <td>{{ source_label(d.best_source) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}
